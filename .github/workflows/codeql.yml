@@ -109,7 +109,24 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
+      # On a copy-pr-bot mirror push the results would upload under
+      # refs/heads/pull-request/<n> and never reach the pull request's code
+      # scanning alerts. Point the upload at the pull request instead. The
+      # mirror branch carries the pull request's head commit. Empty outputs
+      # (main, schedule) leave the action on its default ref.
+      - name: Resolve the code scanning upload ref
+        id: upload
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            pull-request/[0-9]*)
+              echo "ref=refs/pull/${GITHUB_REF_NAME#pull-request/}/head" >> "${GITHUB_OUTPUT}"
+              echo "sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+              ;;
+          esac
+
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+          ref: ${{ steps.upload.outputs.ref }}
+          sha: ${{ steps.upload.outputs.sha }}
