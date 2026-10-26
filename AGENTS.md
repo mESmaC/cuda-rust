@@ -90,6 +90,8 @@ compiler components (`rustc-dev`, `llvm-tools`), including for its nested backen
 workspace. Do not float a pin to work around a failure.
 `cuda-oxide/scripts/check-toolchain-parity.sh` checks the SIMT pin against its
 scaffold, development container, and documentation.
+`cuda-oxide/scripts/check-ci-image-pins.sh` checks that the `rust:<version>`
+container images in the workflows match the root pin.
 
 rustup normally resolves the toolchain from the working directory; an explicit
 override can change that. `--manifest-path` does not change the working directory,
