@@ -250,9 +250,22 @@ jobs:
       - name: Check append-only intrinsic ABI ledger
         working-directory: cuda-oxide
         run: |
+          base_ref=""
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             base_ref="${{ github.event.pull_request.base.sha }}"
           else
+            case "${GITHUB_REF_NAME}" in
+              pull-request/[0-9]*)
+                # copy-pr-bot mirror branch. On the first push `before` is all
+                # zeros and HEAD^ would check only the last commit, so a
+                # breaking ledger change in an earlier commit of a multi-commit
+                # pull request would pass. Compare against where the pull
+                # request forked from main instead.
+                base_ref="$(git merge-base HEAD origin/main || true)"
+                ;;
+            esac
+          fi
+          if [ -z "${base_ref}" ]; then
             before="${{ github.event.before }}"
             zero="0000000000000000000000000000000000000000"
             if [ -n "${before}" ] && [ "${before}" != "${zero}" ] && git cat-file -e "${before}^{commit}"; then
@@ -263,4 +276,5 @@ jobs:
               base_ref="HEAD"
             fi
           fi
+          echo "ABI history base: ${base_ref}"
           cargo run -p cuda-intrinsics-gen -- check-abi-history --base-ref "${base_ref}"
