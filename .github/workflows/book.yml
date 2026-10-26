@@ -100,7 +100,7 @@ jobs:
         run: |
           # Unset CUTILE_DOCS_TAGS → build every tag matching the pattern.
           # Empty CUTILE_DOCS_TAGS → current tree only (fast PR check).
-          case "${{ github.ref }}" in
+          case "${GITHUB_REF}" in
             refs/heads/pull-request/*) export CUTILE_DOCS_TAGS="" ;;
           esac
           bash docs/build_all_docs.sh
