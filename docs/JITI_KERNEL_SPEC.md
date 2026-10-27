@@ -83,3 +83,37 @@ All 5 primitives were stress-tested on an **NVIDIA RTX PRO 6000 Blackwell Server
 | **[2] Monolithic `NVFP4` Stream** + GEMM ($M=1$) | `18.87 MB` | — | `0.365 ms` | `1.00 tok` | `0.365 ms` | `3.6×` | `1.0×` | `0.000000` |
 | **[3] JITI Cold Expert** (`0 MB` perm VRAM, streams Scales + LSB2 + TQ2) | **`0.00 MB`** | **`4.72 MB`** | `0.366 ms` | **`3.94 tok`** | **`0.093 ms`** | **`14.0×`** | **`3.9×`** | **`0.000000` (Bit-Exact)** |
 | **[4] JITI Warm Ledger + Full `n8` ($M=8$) + Fused Plasticity** | `10.49 MB` ledger | **`2.10 MB`** | **`0.159 ms`** | **`3.94 tok`** | **`0.040 ms`** | **`32.2×`** | **`9.0×`** | **`0.000000` (Bit-Exact)** |
+
+
+---
+
+## 5. End-to-End 2.43B Sparse-MoE LLM (`MCL4-COE-v9-Llama-3.2-1B-NCM-Mitosis-R2`) Benchmark on Blackwell (`sm_120a`)
+
+Using [`jiti_llama_moe_ext_blackwell.cu`](../cutile-rs/cutile-examples/examples/jiti_llama_moe_ext_blackwell.cu) and [`jiti_llama_benchmark_blackwell.py`](../cutile-rs/cutile-examples/examples/jiti_llama_benchmark_blackwell.py), we benchmarked the full **`mesmac/MCL4-COE-v9-Llama-3.2-1B-NCM-Mitosis-R2`** checkpoint (`2,430,634,929` total parameters; `1,610,612,736` routed expert parameters across `16` layers $\times$ `16` SwiGLU experts, `top_k = 8` active experts/token = **128 expert evaluations/step**; `820,022,193` Static Compute Core parameters) on the **NVIDIA RTX PRO 6000 Blackwell (`sm_120a`)**:
+
+### 5.1 GPU VRAM Footprint (Before vs. After JITI)
+
+| Configuration | Permanent Expert VRAM | Base Model VRAM | Steady-State Inference VRAM | Peak Inference VRAM | Steady VRAM Savings vs. Baseline |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Pre-Kernel Baseline (PyTorch BF16)** | `6,144.00 MB` *(weights + grouped cache)* | `4,677.58 MB` | **`7,748.58 MB`** (`7.57 GiB`) | **`8,341.90 MB`** (`8.15 GiB`) | `1.00x` *(Baseline)* |
+| **JITI Mode 0: Cold Ring-Buffer Streaming** *(Both MSB2 & Ledger in Pinned Host RAM -> `6.75 MB` L2 Ring)* | **`0.00 MB`** *(`6.75 MB` L2 Ring)* | **`1,617.37 MB`** | **`1,616.92 MB`** (`1.58 GiB`) | **`1,834.59 MB`** (`1.79 GiB`) | **`-6,131.66 MB` (`-79.1%` / `4.79x` smaller)** |
+| **JITI Mode 1: Warm Error-Ledger + `2.0-bit TurboQuant` Stream** *(Ledger+Scales in VRAM; `1.5 MiB/exp` MSB2 streamed over PCIe)* | **`480.00 MB`** | **`2,115.57 MB`** | **`2,114.77 MB`** (`2.07 GiB`) | **`2,327.20 MB`** (`2.27 GiB`) | **`-5,633.81 MB` (`-72.7%` / `3.66x` smaller)** |
+| **JITI Mode 2: All-Resident JITI NVFP4** *(Both MSB2 & Ledger+Scales resident in VRAM)* | **`864.00 MB`** | **`2,512.92 MB`** | **`2,511.81 MB`** (`2.45 GiB`) | **`2,724.20 MB`** (`2.66 GiB`) | **`-5,236.77 MB` (`-67.6%` / `3.08x` smaller)** |
+
+### 5.2 Isolated 16-Layer Sparse-MoE Stack (`1.611B` Params, `top_k=8/16` = 128 Expert Calls/Step)
+
+| JITI Streaming Mode | `M=1` Single-Token Decode (`16` Layers) | `M=8` Speculative Verification (`16` Layers) | `M=8` vs. `M=1` Latency Ratio | `M=8` vs. `M=1` Throughput Gain |
+| :--- | :---: | :---: | :---: | :---: |
+| **Pre-Kernel Baseline (PyTorch BF16 Grouped MoE)** | `~38.10 ms` (`26.2 tok/s`) | — | — | — |
+| **JITI Mode 0: Cold Ring-Buffer Stream (`0 MB` Expert VRAM)** | **`8.35 ms`** (**`119.8 tok/s`**) | **`8.36 ms`** (**`957.4 tok/s`**) | **`1.00x`** (`+0.01 ms`) | **`7.99x` Free-Lunch!** |
+| **JITI Mode 1: Warm Error-Ledger + `2.0-bit TurboQuant` Stream** | **`4.60 ms`** (**`217.6 tok/s`**) | **`4.80 ms`** (**`1,666.5 tok/s`**) | **`1.04x`** (`+0.20 ms`) | **`7.66x` Free-Lunch!** |
+| **JITI Mode 2: All-Resident JITI NVFP4 (`864 MB` Expert VRAM)** | **`3.65 ms`** (**`274.0 tok/s`**) | **`4.25 ms`** (**`1,882.7 tok/s`**) | **`1.16x`** (`+0.60 ms`) | **`6.87x` Free-Lunch!** |
+
+### 5.3 Full Model Backbone Step (`M=1` Decode vs. `M=8` Speculative Verification) & `generate_uta` End-to-End
+
+| JITI Streaming Mode | `generate_uta` (`rec=1`) | `generate_uta` (`rec=2`) | Backbone `[rec=1]` `M=1` Decode | Backbone `[rec=1]` `M=8` Speculative | Backbone `[rec=2]` `M=1` Decode | Backbone `[rec=2]` `M=8` Speculative |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Pre-Kernel BF16 Baseline (`7,749 MB` VRAM)** | `12.78 tok/s` | `8.42 tok/s` | — | — | — | — |
+| **JITI Mode 0 (`1,617 MB` VRAM, `0 MB` Expert VRAM)** | **`22.32 tok/s` (`1.75x`)** | **`14.64 tok/s` (`1.74x`)** | `40.93 ms` (**`24.4 tok/s`**) | `43.02 ms` (**`186.0 tok/s`**) | `63.56 ms` (**`15.7 tok/s`**) | `66.46 ms` (**`120.4 tok/s`**) |
+| **JITI Mode 1 (`2,115 MB` VRAM, Warm Ledger)** | **`22.65 tok/s` (`1.78x`)** | **`14.81 tok/s` (`1.76x`)** | `40.58 ms` (**`24.6 tok/s`**) | `42.32 ms` (**`189.0 tok/s`**) | `62.96 ms` (**`15.9 tok/s`**) | `65.44 ms` (**`122.2 tok/s`**) |
+| **JITI Mode 2 (`2,512 MB` VRAM, Resident JITI)** | **`23.15 tok/s` (`1.81x`)** | **`15.11 tok/s` (`1.80x`)** | `39.86 ms` (**`25.1 tok/s`**) | `41.46 ms` (**`193.0 tok/s`**) | `62.14 ms` (**`16.1 tok/s`**) | `63.85 ms` (**`125.3 tok/s`**) |
