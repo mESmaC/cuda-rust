@@ -11,6 +11,7 @@ mod api;
 pub(crate) mod cudarc_shim;
 mod dtype;
 mod error;
+pub mod hash4;
 mod runtime;
 pub mod simt;
 pub mod vmm;
@@ -19,6 +20,7 @@ pub use api::*;
 pub use cuda_bindings as sys;
 pub use dtype::*;
 pub use error::*;
+pub use hash4::*;
 pub use runtime::*;
 
 // The cuda-oxide surface, re-exported at the root where its consumers
